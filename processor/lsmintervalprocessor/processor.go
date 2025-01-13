@@ -87,6 +87,7 @@ type Processor struct {
 	mu             sync.Mutex
 	batch          *pebble.Batch
 	processingTime time.Time
+	localBatchChan chan *pebble.Batch
 
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -137,6 +138,7 @@ func newProcessor(cfg *config.Config, ivlDefs []intervalDef, log *zap.Logger, ne
 		intervals:      ivlDefs,
 		next:           next,
 		processingTime: time.Now().UTC().Truncate(ivlDefs[0].Duration),
+		localBatchChan: make(chan *pebble.Batch),
 		ctx:            ctx,
 		cancel:         cancel,
 		logger:         log,
@@ -165,17 +167,34 @@ func (p *Processor) Start(ctx context.Context, host component.Host) error {
 		defer timer.Stop()
 
 		for {
+			var batch, partialBatch *pebble.Batch
 			select {
 			case <-p.ctx.Done():
 				return
 			case <-timer.C:
+			case batch = <-p.localBatchChan:
+				if err := commitAndCloseBatch(batch, p.wOpts); err != nil {
+					p.logger.Warn("failed to commit batch", zap.Error(err))
+				}
+				continue
 			}
 
 			p.mu.Lock()
-			batch := p.batch
+			// Recheck the batch to ensure that no pending batches are present
+			select {
+			case partialBatch = <-p.localBatchChan:
+			default:
+			}
+			batch = p.batch
 			p.batch = nil
 			p.processingTime = to
 			p.mu.Unlock()
+
+			if partialBatch != nil {
+				if err := commitAndCloseBatch(partialBatch, p.wOpts); err != nil {
+					p.logger.Warn("failed to commit batch", zap.Error(err))
+				}
+			}
 
 			// Export the batch
 			if err := p.commitAndExport(p.ctx, batch, to); err != nil {
@@ -292,39 +311,12 @@ func (p *Processor) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) erro
 		return errors.Join(append(errs, fmt.Errorf("failed to marshal value to proto binary: %w", err))...)
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	keys := make([][]byte, len(p.intervals))
-	for i, ivl := range p.intervals {
-		// TODO (lahsivjar): If key ends up being independent of any other dimensions
-		// then we can simply cache the marshaled key while updating them on each harvest
-		key := merger.NewKey(ivl.Duration, p.processingTime)
-		keys[i], err = key.Marshal()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to marshal key to binary for ivl %s: %w", ivl.Duration, err))
-			continue
-		}
+	matureBatch, err := p.mergeToBatch(vb)
+	if err != nil {
+		return fmt.Errorf("failed to merge the value to batch: %w", err)
 	}
-
-	if p.batch == nil {
-		p.batch = newBatch(p.db)
-	}
-
-	for _, k := range keys {
-		if err := p.batch.Merge(k, vb, nil); err != nil {
-			errs = append(errs, fmt.Errorf("failed to merge to db: %w", err))
-		}
-	}
-
-	if p.batch.Len() >= dbCommitThresholdBytes {
-		if err := p.batch.Commit(p.wOpts); err != nil {
-			return errors.Join(append(errs, fmt.Errorf("failed to commit a batch to db: %w", err))...)
-		}
-		if err := p.batch.Close(); err != nil {
-			return errors.Join(append(errs, fmt.Errorf("failed to close a batch post commit: %w", err))...)
-		}
-		p.batch = nil
+	if matureBatch != nil {
+		p.localBatchChan <- matureBatch
 	}
 
 	// Call next for the metrics remaining in the input
@@ -338,18 +330,48 @@ func (p *Processor) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) erro
 	return nil
 }
 
+// mergeToBatch merges the provided value and keys to the existing batch
+// and returns the batch if the batch
+func (p *Processor) mergeToBatch(vb []byte) (*pebble.Batch, error) {
+	var err error
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	keys := make([][]byte, len(p.intervals))
+	for i, ivl := range p.intervals {
+		// TODO (lahsivjar): If key ends up being independent of any other dimensions
+		// then we can simply cache the marshaled key while updating them on each harvest
+		key := merger.NewKey(ivl.Duration, p.processingTime)
+		keys[i], err = key.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal key to binary for ivl %s: %w", ivl.Duration, err)
+		}
+	}
+
+	if p.batch == nil {
+		p.batch = newBatch(p.db)
+	}
+	for _, k := range keys {
+		if err := p.batch.Merge(k, vb, nil); err != nil {
+			return nil, fmt.Errorf("failed to merge the batch to db: %w", err)
+		}
+	}
+	if p.batch.Len() >= dbCommitThresholdBytes {
+		batch := p.batch
+		p.batch = nil
+		return batch, nil
+	}
+	return nil, nil
+}
+
 // commitAndExport commits the batch to DB and exports all aggregated metrics in the provided range
 // bounded by `to. If the batch is not committed then a corresponding error would be returned however
 // exports will still proceed.
 func (p *Processor) commitAndExport(ctx context.Context, batch *pebble.Batch, to time.Time) error {
 	var errs []error
-	if batch != nil {
-		if err := batch.Commit(p.wOpts); err != nil {
-			errs = append(errs, fmt.Errorf("failed to commit batch before export: %w", err))
-		}
-		if err := batch.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close batch before export: %w", err))
-		}
+	if err := commitAndCloseBatch(batch, p.wOpts); err != nil {
+		errs = append(errs, fmt.Errorf("failed to commit batch before export: %w", err))
 	}
 	if err := p.export(ctx, to); err != nil {
 		errs = append(errs, fmt.Errorf("failed to export: %w", err))
@@ -497,4 +519,17 @@ func newBatch(db *pebble.DB) *pebble.Batch {
 	// TODO (lahsivjar): Optimize batch as per our needs
 	// Requires release of https://github.com/cockroachdb/pebble/pull/3139
 	return db.NewBatch()
+}
+
+func commitAndCloseBatch(batch *pebble.Batch, wOpts *pebble.WriteOptions) error {
+	if batch == nil {
+		return nil
+	}
+	if err := batch.Commit(wOpts); err != nil {
+		return err
+	}
+	if err := batch.Close(); err != nil {
+		return err
+	}
+	return nil
 }
