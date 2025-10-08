@@ -1118,6 +1118,10 @@ func (f *fakeResolver) ResolveClass(_ context.Context, key string) (string, erro
 	return "", nil // Unknown class
 }
 
+func (f *fakeResolver) WindowMultiplier(context.Context) float64 {
+	return 1.3
+}
+
 func (f *fakeResolver) Reset() {
 	f.callCount = 0
 	f.calledKeys = nil

@@ -73,6 +73,7 @@ type DynamicRateLimiting struct {
 	Enabled bool `mapstructure:"enabled"`
 	// WindowMultiplier is the factor by which the previous window rate is
 	// multiplied to get the dynamic part of the limit. Defaults to 1.3.
+	// TODO(lahsivjar): Remove or have it as a default window multiplier
 	WindowMultiplier float64 `mapstructure:"window_multiplier"`
 	// WindowDuration defines the time window for which the dynamic rate limit
 	// is calculated on.
