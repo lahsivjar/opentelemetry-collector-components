@@ -27,10 +27,10 @@ import (
 	"go.opentelemetry.io/collector/processor"
 
 	"github.com/elastic/opentelemetry-collector-components/processor/lsmintervalprocessor/config"
+	"github.com/elastic/opentelemetry-collector-components/processor/lsmintervalprocessor/internal/customottl"
 	"github.com/elastic/opentelemetry-collector-components/processor/lsmintervalprocessor/internal/metadata"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottldatapoint"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/ottlfuncs"
 )
 
 // NewFactory returns a new factory for the Metrics Generation processor.
@@ -57,7 +57,7 @@ func createMetricsProcessor(
 		ivlDef := intervalDef{Duration: ivl.Duration}
 		if len(ivl.Statements) > 0 {
 			parser, err := ottldatapoint.NewParser(
-				ottlfuncs.StandardFuncs[*ottldatapoint.TransformContext](),
+				customottl.DatapointFuncs(),
 				set.TelemetrySettings,
 			)
 			if err != nil {
