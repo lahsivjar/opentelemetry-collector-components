@@ -643,7 +643,8 @@ func withMappingMode(info client.Info, mode string, includeMetadata bool) client
 }
 
 // withDynamicResourceAttributes enriches the context with the global label
-// keys as a CSV value under the "x-dynamic-resource-attributes" metadata key.
+// keys under the "x-elastic-dynamic-resource-attributes" metadata key.
+// Each key is stored as a separate element in the metadata value slice.
 // The provided keySet must be sorted and deduplicated by the caller.
 func withDynamicResourceAttributes(ctx context.Context, keySet []string) context.Context {
 	info := client.FromContext(ctx)
@@ -651,7 +652,7 @@ func withDynamicResourceAttributes(ctx context.Context, keySet []string) context
 	for k := range info.Metadata.Keys() {
 		newMeta[k] = info.Metadata.Get(k)
 	}
-	newMeta["x-dynamic-resource-attributes"] = []string{strings.Join(keySet, ",")}
+	newMeta["x-elastic-dynamic-resource-attributes"] = keySet
 	return client.NewContext(ctx, client.Info{
 		Addr:     info.Addr,
 		Auth:     info.Auth,

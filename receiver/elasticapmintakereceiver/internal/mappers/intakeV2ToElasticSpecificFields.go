@@ -460,18 +460,19 @@ func setLabels(event *modelpb.APMEvent, attributesMap pcommon.Map, globalKeys *[
 		if key == "" || labelValue == nil {
 			continue
 		}
+		attrKey := "labels." + key
 		if labelValue.Value != "" {
-			attributesMap.PutStr("labels."+key, labelValue.Value)
+			attributesMap.PutStr(attrKey, labelValue.Value)
 		}
 		if len(labelValue.Values) > 0 {
-			labelValues := attributesMap.PutEmptySlice("labels." + key)
+			labelValues := attributesMap.PutEmptySlice(attrKey)
 			labelValues.EnsureCapacity(len(labelValue.Values))
 			for _, v := range labelValue.Values {
 				labelValues.AppendEmpty().SetStr(v)
 			}
 		}
 		if globalKeys != nil && labelValue.Global {
-			*globalKeys = append(*globalKeys, key)
+			*globalKeys = append(*globalKeys, attrKey)
 		}
 	}
 
@@ -479,11 +480,12 @@ func setLabels(event *modelpb.APMEvent, attributesMap pcommon.Map, globalKeys *[
 		if key == "" || numericLabelValue == nil {
 			continue
 		}
+		attrKey := "numeric_labels." + key
 		if numericLabelValue.Value != 0 {
-			attributesMap.PutDouble("numeric_labels."+key, numericLabelValue.Value)
+			attributesMap.PutDouble(attrKey, numericLabelValue.Value)
 		}
 		if globalKeys != nil && numericLabelValue.Global {
-			*globalKeys = append(*globalKeys, key)
+			*globalKeys = append(*globalKeys, attrKey)
 		}
 	}
 }

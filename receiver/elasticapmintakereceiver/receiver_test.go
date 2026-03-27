@@ -679,9 +679,8 @@ func TestGlobalLabelsMetadataPropagation(t *testing.T) {
 	require.GreaterOrEqual(t, len(ctxs), 1)
 	md := client.FromContext(ctxs[0]).Metadata
 
-	got := md.Get("x-dynamic-resource-attributes")
-	require.Len(t, got, 1, "expected exactly one x-dynamic-resource-attributes value")
-	require.Equal(t, "tag1,tag2", got[0])
+	got := md.Get("x-elastic-dynamic-resource-attributes")
+	require.Equal(t, []string{"labels.tag1", "numeric_labels.tag2"}, got)
 }
 
 func sendInput(t *testing.T, inputJsonFileName string, testEndpoint string) {

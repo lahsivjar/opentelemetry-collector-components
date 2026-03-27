@@ -64,7 +64,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"local":     {Value: "skip", Global: false},
 				},
 			},
-			expectedGlobalKeys: []string{"env", "team.name"},
+			expectedGlobalKeys: []string{"labels.env", "labels.team.name"},
 			expectedAttrs: map[string]any{
 				"labels.team.name": "platform",
 				"labels.env":      "prod",
@@ -79,7 +79,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"local_num":   {Value: 1, Global: false},
 				},
 			},
-			expectedGlobalKeys: []string{"cost_center"},
+			expectedGlobalKeys: []string{"numeric_labels.cost_center"},
 			expectedAttrs: map[string]any{
 				"numeric_labels.cost_center": float64(100),
 				"numeric_labels.local_num":   float64(1),
@@ -96,7 +96,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"cost_center": {Value: 100, Global: true},
 				},
 			},
-			expectedGlobalKeys: []string{"cost_center", "team.name"},
+			expectedGlobalKeys: []string{"labels.team.name", "numeric_labels.cost_center"},
 			expectedAttrs: map[string]any{
 				"labels.team.name":           "platform",
 				"labels.local":              "skip",
@@ -113,7 +113,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"shared_key": {Value: 1, Global: true},
 				},
 			},
-			expectedGlobalKeys: []string{"shared_key"},
+			expectedGlobalKeys: []string{"labels.shared_key", "numeric_labels.shared_key"},
 			expectedAttrs: map[string]any{
 				"labels.shared_key":         "str",
 				"numeric_labels.shared_key": float64(1),
@@ -130,7 +130,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"nil_num": nil,
 				},
 			},
-			expectedGlobalKeys: []string{"good"},
+			expectedGlobalKeys: []string{"labels.good"},
 			expectedAttrs: map[string]any{
 				"labels.good": "v",
 			},
@@ -143,7 +143,7 @@ func TestSetLabelsCollectsGlobalKeys(t *testing.T) {
 					"real": {Value: "v", Global: true},
 				},
 			},
-			expectedGlobalKeys: []string{"real"},
+			expectedGlobalKeys: []string{"labels.real"},
 			expectedAttrs: map[string]any{
 				"labels.real": "v",
 			},
